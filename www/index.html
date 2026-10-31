@@ -71,8 +71,9 @@ h2{margin:0 0 14px;font-size:1.25rem}
   <div class="row"><span>Punto de oro</span>
     <div class="seg" id="segG"><button data-g="0">No</button><button data-g="1">Sí</button></div></div>
   <p class="hint">Con punto de oro, en 40-40 el próximo punto define el game. Si dos equipos empatan en el máximo de games, se juega tie-break a 7. El partido es al mejor de 3 sets.</p>
-  <button class="full" id="learnBtn">Configurar botones del control</button>
-  <p class="hint" id="mapTxt"></p>
+  <h2 style="margin-top:20px">Botones del control</h2>
+  <div id="acts"></div>
+  <p class="hint">Tocá “Asignar” y después apretá el botón del control que querés usar para esa acción. Si repetís un botón, se lo quitás a la otra acción. Reiniciar pide apretar dos veces para evitar accidentes.</p>
   <p class="hint" id="dbg">Último evento recibido: ninguno. Apretá un botón del control para probarlo.</p>
   <button class="full" id="newBtn">Nuevo partido</button>
   <button class="full" id="closeBtn">Listo</button>
@@ -82,12 +83,13 @@ h2{margin:0 0 14px;font-size:1.25rem}
 
 <script>
 const $=id=>document.getElementById(id);
-const DEF={n:6,gold:0,map:{ArrowLeft:"a",ArrowRight:"b",ArrowDown:"u"}};
-const NAMES={a:"Punto Equipo 1",b:"Punto Equipo 2",u:"Deshacer"};
+const DEF={n:6,gold:0,map:{ArrowLeft:"a",ArrowRight:"b",ArrowUp:"ua",ArrowDown:"ub"}};
+const NAMES={a:"Punto Equipo 1",b:"Punto Equipo 2",ua:"Deshacer punto Equipo 1",ub:"Deshacer punto Equipo 2",r:"Reiniciar partido"};
 function load(k,d){try{return JSON.parse(localStorage.getItem(k))||d}catch(e){return d}}
 function save(){try{localStorage.setItem("pdl-cfg",JSON.stringify(cfg));localStorage.setItem("pdl-st",JSON.stringify(st))}catch(e){}}
 const fresh=()=>({p:[0,0],g:[0,0],s:[0,0],tb:false,done:null,sets:[]});
 let cfg=load("pdl-cfg",DEF),st=load("pdl-st",null)||fresh(),hist=[],learn=null;
+for(const k in cfg.map)if(!NAMES[cfg.map[k]])delete cfg.map[k];
 
 function setWin(i){
   st.sets.push(st.g[0]+"-"+st.g[1]);
@@ -104,15 +106,27 @@ function gameWin(i){
 }
 function point(i){
   if(st.done!==null)return;
-  hist.push(JSON.stringify(st));if(hist.length>300)hist.shift();
+  hist.push(i+"|"+JSON.stringify(st));if(hist.length>300)hist.shift();
   const o=1-i;st.p[i]++;
   if(st.tb){if(st.p[i]>=7&&st.p[i]-st.p[o]>=2)gameWin(i)}
   else if(+cfg.gold){if(st.p[i]>=4)gameWin(i)}
   else if(st.p[i]>=4&&st.p[i]-st.p[o]>=2)gameWin(i);
   render();save();
 }
-function undo(){if(hist.length){st=JSON.parse(hist.pop());render();save()}}
-function act(a){if(a==="a")point(0);else if(a==="b")point(1);else if(a==="u")undo()}
+function undo(){if(hist.length){st=JSON.parse(hist.pop().slice(2));render();save()}}
+let rt=0,ft=0;
+function flash(t){$("status").textContent=t;clearTimeout(ft);ft=setTimeout(render,2500)}
+function undoTeam(i){
+  if(st.p[i]>0){hist.push("x|"+JSON.stringify(st));st.p[i]--;render();save();return}
+  const h=hist[hist.length-1];
+  if(h&&h[0]===String(i)){undo();return}
+  flash("No hay puntos del Equipo "+(i+1)+" para deshacer");
+}
+function softReset(){
+  if(Date.now()-rt<3000){rt=0;st=fresh();hist=[];render();save();return}
+  rt=Date.now();flash("Reiniciar: apretá de nuevo para confirmar");
+}
+function act(a){if(a==="a")point(0);else if(a==="b")point(1);else if(a==="ua")undoTeam(0);else if(a==="ub")undoTeam(1);else if(a==="r")softReset();else if(a==="u")undo()}
 
 function disp(i){
   if(st.tb)return st.p[i];
@@ -149,10 +163,8 @@ function feed(code,e){
   note(code);
   if(learn){
     e.preventDefault();
-    if(learn.map[code])return true;
-    learn.map[code]=learn.steps[learn.k][0];learn.k++;
-    if(learn.k>=learn.steps.length){cfg.map=learn.map;learn=null;$("learn").style.display="none";save();mapTxt()}
-    else $("la").textContent=learn.steps[learn.k][1]+" (detectado: "+label(code)+")";
+    for(const k in cfg.map)if(cfg.map[k]===learn)delete cfg.map[k];
+    cfg.map[code]=learn;learn=null;$("learn").style.display="none";save();mapTxt();$("dlg").showModal();
     return true;
   }
   const a=cfg.map[code];
@@ -186,20 +198,27 @@ function seg(){
   document.querySelectorAll("#segG button").forEach(b=>b.classList.toggle("on",+b.dataset.g===+cfg.gold));
 }
 function mapTxt(){
-  const m=Object.entries(cfg.map).map(([k,a])=>NAMES[a]+": "+label(k));
-  $("mapTxt").textContent=m.length?"Asignado:\n"+m.join("\n"):"Todavía no hay botones asignados.";
+  const box=$("acts");box.innerHTML="";
+  for(const a in NAMES){
+    const k=Object.keys(cfg.map).find(x=>cfg.map[x]===a);
+    const row=document.createElement("div");row.className="row";
+    const t=document.createElement("div");
+    t.innerHTML="<b></b><div class='hint'></div>";
+    t.firstChild.textContent=NAMES[a];t.lastChild.textContent=k?label(k):"Sin asignar";
+    const s=document.createElement("div");s.className="seg";
+    const b1=document.createElement("button");b1.textContent="Asignar";
+    b1.onclick=()=>{learn=a;$("dlg").close();$("la").textContent=NAMES[a];$("learn").style.display="flex"};
+    s.append(b1);
+    if(k){const b2=document.createElement("button");b2.textContent="×";b2.setAttribute("aria-label","Quitar");b2.onclick=()=>{delete cfg.map[k];save();mapTxt()};s.append(b2)}
+    row.append(t,s);box.append(row);
+  }
 }
 $("cfgBtn").onclick=()=>{seg();mapTxt();$("dlg").showModal()};
 $("closeBtn").onclick=()=>$("dlg").close();
 document.querySelectorAll("#segN button").forEach(b=>b.onclick=()=>{cfg.n=+b.dataset.n;seg();render();save()});
 document.querySelectorAll("#segG button").forEach(b=>b.onclick=()=>{cfg.gold=+b.dataset.g;seg();render();save()});
 $("newBtn").onclick=()=>{if(confirm("¿Empezar un partido nuevo?")){st=fresh();hist=[];render();save();$("dlg").close()}};
-$("learnBtn").onclick=()=>{
-  $("dlg").close();
-  learn={k:0,map:{},steps:Object.entries(NAMES)};
-  $("la").textContent=learn.steps[0][1];$("learn").style.display="flex";
-};
-$("lc").onclick=()=>{learn=null;$("learn").style.display="none"};
+$("lc").onclick=()=>{learn=null;$("learn").style.display="none";$("dlg").showModal()};
 
 /* Mantener la pantalla encendida */
 let wl=null;
@@ -210,4 +229,3 @@ render();
 </script>
 </body>
 </html>
-
