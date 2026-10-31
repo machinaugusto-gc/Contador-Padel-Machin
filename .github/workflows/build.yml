@@ -16,6 +16,26 @@ jobs:
           java-version: 17
       - run: npm install
       - run: npx cap add android
+      - name: Generar iconos desde icon.png
+        run: |
+          pip install pillow
+          python3 - <<'PY'
+          from PIL import Image, ImageDraw
+          src = Image.open("icon.png").convert("RGBA")
+          res = "android/app/src/main/res"
+          sizes = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+          for k, s in sizes.items():
+              p = f"{res}/mipmap-{k}"
+              src.resize((s, s), Image.LANCZOS).save(f"{p}/ic_launcher.png")
+              m = Image.new("L", (s * 4, s * 4), 0)
+              ImageDraw.Draw(m).ellipse((0, 0, s * 4 - 1, s * 4 - 1), fill=255)
+              m = m.resize((s, s), Image.LANCZOS)
+              r = src.resize((s, s), Image.LANCZOS)
+              r.putalpha(m)
+              r.save(f"{p}/ic_launcher_round.png")
+              f = s * 108 // 48
+              src.resize((f, f), Image.LANCZOS).save(f"{p}/ic_launcher_foreground.png")
+          PY
       - run: npx cap sync android
       - run: chmod +x gradlew && ./gradlew assembleDebug
         working-directory: android
